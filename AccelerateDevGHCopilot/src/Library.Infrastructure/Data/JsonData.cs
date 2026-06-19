@@ -201,6 +201,34 @@ public class JsonData
         return populated;
     }
 
+    public List<Book> GetPopulatedBooks(IEnumerable<Book> books)
+    {
+        List<Book> populated = new List<Book>();
+        foreach (Book book in books)
+        {
+            populated.Add(GetPopulatedBookWithItems(book));
+        }
+        return populated;
+    }
+
+    public Book GetPopulatedBookWithItems(Book b)
+    {
+        Book populated = GetPopulatedBook(b);
+
+        // Adicionar BookItems para este livro
+        populated.BookItems = new List<BookItem>();
+        foreach (BookItem bi in BookItems!)
+        {
+            if (bi.BookId == b.Id)
+            {
+                BookItem populatedItem = GetPopulatedBookItem(bi);
+                populated.BookItems.Add(populatedItem);
+            }
+        }
+
+        return populated;
+    }
+
     private async Task<T?> LoadJson<T>(string filePath)
     {
         using (FileStream jsonStream = File.OpenRead(filePath))
