@@ -9,4 +9,5 @@ public class Book
     public required string ImageName { get; set; }
     public required string ISBN { get; set; }
     public Author? Author { get; set; }
+    public ICollection<BookItem> BookItems { get; set; } = new HashSet<BookItem>();
 }

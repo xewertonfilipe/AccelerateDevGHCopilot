@@ -7,4 +7,5 @@ public class BookItem
     public DateTime AcquisitionDate { get; set; }
     public string? Condition { get; set; }
     public Book? Book { get; set; }
+    public ICollection<Loan> Loans { get; set; } = new HashSet<Loan>();
 }

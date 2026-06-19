@@ -1,6 +1,7 @@
 ﻿using Library.ApplicationCore;
 using Library.ApplicationCore.Entities;
 using Library.ApplicationCore.Enums;
+using Library.Infrastructure.Data;
 using Library.Console;
 
 public class ConsoleApp
@@ -8,21 +9,24 @@ public class ConsoleApp
     ConsoleState _currentState = ConsoleState.PatronSearch;
 
     List<Patron> matchingPatrons = new List<Patron>();
+    List<Book> matchingBooks = new List<Book>();
 
     Patron? selectedPatronDetails = null;
     Loan selectedLoanDetails = null!;
 
+    JsonData _jsonData;
     IPatronRepository _patronRepository;
     ILoanRepository _loanRepository;
     ILoanService _loanService;
     IPatronService _patronService;
 
-    public ConsoleApp(ILoanService loanService, IPatronService patronService, IPatronRepository patronRepository, ILoanRepository loanRepository)
+    public ConsoleApp(ILoanService loanService, IPatronService patronService, IPatronRepository patronRepository, ILoanRepository loanRepository, JsonData jsonData)
     {
         _patronRepository = patronRepository;
         _loanRepository = loanRepository;
         _loanService = loanService;
         _patronService = patronService;
+        _jsonData = jsonData;
     }
 
     public async Task Run()
@@ -42,6 +46,12 @@ public class ConsoleApp
                     break;
                 case ConsoleState.LoanDetails:
                     _currentState = await LoanDetails();
+                    break;
+                case ConsoleState.SearchBooks:
+                    _currentState = await SearchBooks();
+                    break;
+                case ConsoleState.BookSearchResults:
+                    _currentState = await BookSearchResults();
                     break;
             }
         }
@@ -136,6 +146,7 @@ public class ConsoleApp
             {
                 "q" when options.HasFlag(CommonActions.Quit) => CommonActions.Quit,
                 "s" when options.HasFlag(CommonActions.SearchPatrons) => CommonActions.SearchPatrons,
+                "b" when options.HasFlag(CommonActions.SearchBooks) => CommonActions.SearchBooks,
                 "m" when options.HasFlag(CommonActions.RenewPatronMembership) => CommonActions.RenewPatronMembership,
                 "e" when options.HasFlag(CommonActions.ExtendLoanedBook) => CommonActions.ExtendLoanedBook,
                 "r" when options.HasFlag(CommonActions.ReturnLoanedBook) => CommonActions.ReturnLoanedBook,
@@ -154,6 +165,10 @@ public class ConsoleApp
     static void WriteInputOptions(CommonActions options)
     {
         Console.WriteLine("Input Options:");
+        if (options.HasFlag(CommonActions.SearchBooks))
+        {
+            Console.WriteLine(" - \"b\" to check for book availability");
+        }
         if (options.HasFlag(CommonActions.ReturnLoanedBook))
         {
             Console.WriteLine(" - \"r\" to mark as returned");
@@ -193,7 +208,7 @@ public class ConsoleApp
             loanNumber++;
         }
 
-        CommonActions options = CommonActions.SearchPatrons | CommonActions.Quit | CommonActions.Select | CommonActions.RenewPatronMembership;
+        CommonActions options = CommonActions.SearchBooks | CommonActions.SearchPatrons | CommonActions.Quit | CommonActions.Select | CommonActions.RenewPatronMembership;
         CommonActions action = ReadInputOptions(options, out int selectedLoanNumber);
         if (action == CommonActions.Select)
         {
@@ -208,6 +223,10 @@ public class ConsoleApp
                 Console.WriteLine("Invalid book loan number. Please try again.");
                 return ConsoleState.PatronDetails;
             }
+        }
+        else if (action == CommonActions.SearchBooks)
+        {
+            return await SearchBooks();
         }
         else if (action == CommonActions.Quit)
         {
@@ -270,5 +289,65 @@ public class ConsoleApp
         }
 
         throw new InvalidOperationException("An input option is not handled.");
+    }
+
+    async Task<ConsoleState> SearchBooks()
+    {
+        string searchInput = ReadBookTitle();
+
+        await _jsonData.EnsureDataLoaded();
+
+        // Chain: Book.Title -> Book.Id -> BookItem.BookId
+        var book = _jsonData.Books?.FirstOrDefault(b =>
+            string.Equals(b.Title, searchInput, StringComparison.OrdinalIgnoreCase));
+
+        if (book == null)
+        {
+            Console.WriteLine("No matching books found.");
+            return ConsoleState.PatronDetails;
+        }
+
+        // BookItem.BookId -> BookItem.Id
+        var bookItem = _jsonData.BookItems?.FirstOrDefault(bi => bi.BookId == book.Id);
+        if (bookItem == null)
+        {
+            Console.WriteLine($"The book \"{book.Title}\" is available for loan");
+            return ConsoleState.PatronDetails;
+        }
+
+        // Loan.BookItemId -> Loan.PatronId (with no return date = active loan)
+        var activeLoan = _jsonData.Loans?.FirstOrDefault(loan => loan.BookItemId == bookItem.Id && loan.ReturnDate == null);
+        
+        if (activeLoan == null)
+        {
+            Console.WriteLine($"The book \"{book.Title}\" is available for loan");
+        }
+        else
+        {
+            // Loan.PatronId -> Patron.Id (get the correct patron)
+            var borrowingPatron = _jsonData.Patrons?.FirstOrDefault(p => p.Id == activeLoan.PatronId);
+            var patronName = borrowingPatron?.Name ?? "Unknown Patron";
+            
+            Console.WriteLine($"The book \"{book.Title}\" is currently loaned to {patronName}. The due date is {activeLoan.DueDate:yyyy-MM-dd}");
+        }
+
+        return ConsoleState.PatronDetails;
+    }
+
+    static string ReadBookTitle()
+    {
+        string? searchInput = null;
+        while (String.IsNullOrWhiteSpace(searchInput))
+        {
+            Console.Write("Enter a title or ISBN to search for books: ");
+            searchInput = Console.ReadLine();
+        }
+        return searchInput;
+    }
+
+    async Task<ConsoleState> BookSearchResults()
+    {
+        // This state can be used for future enhancements like selecting a specific book
+        return ConsoleState.PatronDetails;
     }
 }
